@@ -1,0 +1,24 @@
+@import "tailwindcss";
+
+@layer components {
+  .input {
+    @apply w-full px-4 py-3 rounded-xl border border-zinc-300
+           bg-white/70 backdrop-blur
+           focus:outline-none focus:ring-2 focus:ring-indigo-500;
+  }
+
+  .btn-primary {
+    @apply bg-indigo-600 text-white px-5 py-3 rounded-xl
+           hover:bg-indigo-700 transition shadow-sm;
+  }
+
+  .card {
+    @apply bg-white/80 backdrop-blur rounded-2xl
+           shadow-md border border-white/60;
+  }
+}
+
+body {
+  @apply bg-gradient-to-br from-zinc-50 via-indigo-50 to-cyan-50
+         text-zinc-800 min-h-screen;
+}
