@@ -1,76 +1,41 @@
-using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Linq;
-using System.Security.Cryptography;
-using System.Text;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 using task_manager_api.DTOs;
-using task_manager_api.Extensions;
 using task_manager_api.Interfaces;
-using TaskManager.Data;
-using TaskManager.Models;
 
 namespace task_manager_api.Controllers
 {
     [ApiController]
     [Route("auth")]
-    public class AccountController(ApplicationDbContext context, ITokenService tokenService) : ControllerBase
+    public class AccountController(IAuthService authService) : ControllerBase
     {
+        private readonly IAuthService _authService = authService;
+
         [HttpPost("register")]
         public async Task<ActionResult<UserDto>> Register(RegisterDto registerDto)
         {
-            if (await EmailExists(registerDto.Email))
+            try
             {
-                return BadRequest("Email is already taken");
+                var result = await _authService.RegisterAsync(registerDto);
+                return Ok(result);
             }
-
-            using var hmac = new HMACSHA512();                   
-
-            var user = new User
+            catch (InvalidOperationException ex)
             {
-                Email = registerDto.Email,
-                PasswordHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(registerDto.Password)),
-                PasswordSalt = hmac.Key
-            };
-
-            context.Users.Add(user);
-            await context.SaveChangesAsync();
-
-            return user.ToDto(tokenService);
+                return BadRequest(ex.Message);
+            }
         }
 
         [HttpPost("login")]
         public async Task<ActionResult<UserDto>> Login(LoginDto loginDto)
         {
-            var user = await context.Users.SingleOrDefaultAsync(x => x.Email.ToLower() == loginDto.Email.ToLower());
-
-            if (user == null)
+            try
             {
-                return Unauthorized("Invalid email");
+                var result = await _authService.LoginAsync(loginDto);
+                return Ok(result);
             }
-
-            using var hmac = new HMACSHA512(user.PasswordSalt);
-
-            var computedHash = hmac.ComputeHash(Encoding.UTF8.GetBytes(loginDto.Password));
-
-            for (int i = 0; i < computedHash.Length; i++)
+            catch (UnauthorizedAccessException)
             {
-                if (computedHash[i] != user.PasswordHash[i])
-                {
-                    return Unauthorized("Invalid password");
-                }
+                return Unauthorized("Invalid credentials");
             }
-            return user.ToDto(tokenService);
-        }        
-
-        private async Task<bool> EmailExists(string email)
-        {
-            return await context.Users.AnyAsync(x => x.Email.ToLower() == email.ToLower());
-        }        
+        }
     }
 }

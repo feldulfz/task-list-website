@@ -1,53 +1,33 @@
-using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using System.Threading.Tasks;
 using TaskManager.Models;
-using TaskManager.Data;
 using task_manager_api.DTOs;
 using Microsoft.AspNetCore.Authorization;
 using System.Security.Claims;
-namespace TaskManager.API
+using task_manager_api.Interfaces;
+
+namespace task_manager_api.Controllers
 {
     [Authorize]
     [ApiController]
     [Route("tasks")]
-    public class TasksController(ApplicationDbContext context) : ControllerBase
+    public class TasksController(ITaskRepository taskRepository) : ControllerBase
     {
-        private readonly ApplicationDbContext _context = context;
+        private readonly ITaskRepository _taskRepository = taskRepository;
 
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var tasks = await _context.Tasks
-                .Include(t => t.User)
-                .Include(t => t.CreatedByUser)
-                .Select(t => new TaskResponseDto
-                {
-                    Id = t.Id,
-                    Title = t.Title,
-                    IsDone = t.IsDone,
-
-                    AssignedUserId = t.UserId,
-                    AssignedUserEmail = t.User.Email,
-
-                    CreatedByUserId = t.CreatedByUserId,
-                    CreatedByUserEmail = t.CreatedByUser.Email
-                })
-                .ToListAsync();
-
+            var tasks = await _taskRepository.GetAllTasksAsync();
             return Ok(tasks);
         }
+
 
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var tasks = await _context.Tasks.FindAsync(id);
-
-            if (tasks == null)
-                return NotFound();
-
-            return Ok(tasks);
+            var task = await _taskRepository.GetTaskByIdAsync(id);
+            if (task == null) return NotFound();
+            return Ok(task);
         }
 
         [HttpPost]
@@ -56,10 +36,7 @@ namespace TaskManager.API
             var creatorId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
             // Validate assigned user exists
-            var assignedUserExists = await _context.Users
-                .AnyAsync(u => u.Id == dto.AssignedUserId);
-
-            if (!assignedUserExists)
+            if (!await _taskRepository.UserExistsAsync(dto.AssignedUserId))
                 return BadRequest("Assigned user does not exist.");
 
             var task = new TaskItem
@@ -70,33 +47,34 @@ namespace TaskManager.API
                 CreatedByUserId = creatorId
             };
 
-            _context.Tasks.Add(task);
-            await _context.SaveChangesAsync();
+            await _taskRepository.CreateTaskAsync(task);
+            await _taskRepository.SaveChangesAsync();
 
             return CreatedAtAction(nameof(GetById), new { id = task.Id }, task);
         }
 
         [HttpPut("{id}")]
-        public async Task<IActionResult> Update(int id, [FromBody] UpdateTaskDto updated)
+        public async Task<IActionResult> Update(int id, [FromBody] UpdateTaskDto dto)
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var task = await _context.Tasks.FindAsync(id);
+            var task = await _taskRepository.GetTaskByIdAsync(id);
             if (task == null) return NotFound();
 
-            // Allow assigned user OR creator to edir
-            if (task.UserId != userId && task.CreatedByUserId != userId) return Forbid();            
+            // Allow assigned user OR creator to edit
+            if (task.UserId != userId && task.CreatedByUserId != userId)
+                return Forbid();
 
-            // Validate assigned user existence
-            var assignedUserExists = await _context.Users.AnyAsync(u => u.Id == updated.AssignedUserId);
+            // Validate assigned user exists
+            if (!await _taskRepository.UserExistsAsync(dto.AssignedUserId))
+                return BadRequest("Assigned user does not exist.");
 
-            if (!assignedUserExists) return BadRequest("Assigned user does not exist.");
+            task.Title = dto.Title;
+            task.IsDone = dto.IsDone;
+            task.UserId = dto.AssignedUserId;
 
-            task.Title = updated.Title;
-            task.IsDone = updated.IsDone;
-            task.UserId = updated.AssignedUserId;
-
-            await _context.SaveChangesAsync();
+            await _taskRepository.UpdateTaskAsync(task);
+            await _taskRepository.SaveChangesAsync();
 
             return Ok(task);
         }
@@ -106,14 +84,15 @@ namespace TaskManager.API
         {
             var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
-            var task = await _context.Tasks.FindAsync(id);
+            var task = await _taskRepository.GetTaskByIdAsync(id);
             if (task == null) return NotFound();
 
             // Only the creator can delete
-            if (task.CreatedByUserId != userId) return Forbid();            
+            if (task.CreatedByUserId != userId)
+                return Forbid();
 
-            _context.Tasks.Remove(task);
-            await _context.SaveChangesAsync();
+            await _taskRepository.DeleteTaskAsync(task);
+            await _taskRepository.SaveChangesAsync();
 
             return NoContent();
         }

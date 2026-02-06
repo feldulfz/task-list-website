@@ -17,9 +17,19 @@ export default function Register({ onSuccess }) {
 
       onSuccess(res.data);
     } catch (err) {
-      errorAlert(
-        err.response?.data?.message || "Registration failed. Please try again."
-      );
+      console.error(err);
+      let errorMessage = "Registration failed. Please try again.";
+
+      if (err.response?.data) {
+        if (typeof err.response.data === "string") {
+          errorMessage = err.response.data;
+        }
+        else if (err.response.data.message) {
+          errorMessage = err.response.data.message;
+        }
+      }
+
+      errorAlert(errorMessage);
     }
   };
 
